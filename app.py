@@ -1,6 +1,6 @@
 
-from flask import Flask, render_template, request, jsonify
-from inference import predict_website
+from flask import Flask, render_template, request, jsonify, Response
+from inference_lightweight import predict_website
 from datetime import datetime
 import csv
 import io
@@ -29,27 +29,27 @@ def scan():
         }), 400
 
     try:
-        result = predict_website(url)
+        analysis = predict_website(url)
+
+        result = analysis["prediction"]
+        phishing_probability = analysis["probability"]
 
         scan_record = {
             "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "url": result["url"],
-            "result": result["result"],
-            "phishing_probability": round(
-                result["phishing_probability"] * 100, 2
-            )
+            "url": url,
+            "result": result,
+            "phishing_probability": phishing_probability
         }
 
         scan_history.append(scan_record)
 
         return jsonify({
             "success": True,
-            "result": result["result"],
-            "prediction": result["prediction"],
-            "phishing_probability": round(
-                result["phishing_probability"] * 100, 2
-            ),
-            "features": result["features"]
+            "url": url,
+            "result": result,
+            "prediction": result,
+            "phishing_probability": phishing_probability,
+            "features": analysis["features"]
         })
 
     except ValueError as error:
@@ -58,8 +58,9 @@ def scan():
             "error": str(error)
         }), 400
 
-    except Exception as error:
+    except Exception:
         app.logger.exception("URL prediction failed")
+
         return jsonify({
             "success": False,
             "error": "Unable to analyse this URL. Please try again."
@@ -96,8 +97,6 @@ def download_report():
 
     writer.writeheader()
     writer.writerows(scan_history)
-
-    from flask import Response
 
     return Response(
         output.getvalue(),

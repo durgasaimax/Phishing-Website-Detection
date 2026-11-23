@@ -1,0 +1,8 @@
+{
+    "Accuracy": 0.9979734630316993,
+    "Phishing Precision": 0.9998480012159903,
+    "Phishing Recall": 0.9953596287703016,
+    "Phishing F1 Score": 0.9975987665242777,
+    "Phishing ROC AUC": 0.9983423589830073,
+    "Phishing Average Precision": 0.998741069791413
+}
