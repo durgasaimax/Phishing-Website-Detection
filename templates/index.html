@@ -1,0 +1,428 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>PhishGuard | AI Security Platform</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+    <div class="background-grid"></div>
+
+    <header class="navbar">
+        <a href="/" class="brand">
+            ✦ PHISH<span>GUARD.</span>
+            <small>AI SECURITY PLATFORM</small>
+        </a>
+
+        <nav>
+            <a href="#home" class="nav-link active">Home</a>
+            <a href="#history" class="nav-link">Scan History</a>
+            <a href="#performance" class="nav-link">Performance</a>
+            <a href="#about" class="nav-link">About</a>
+        </nav>
+    </header>
+
+
+    <main>
+
+        <!-- HOME SECTION -->
+
+        <section id="home" class="hero-section">
+
+            <div class="hero-content">
+
+                <div class="eyebrow">
+                    ✦ AI-POWERED WEBSITE PROTECTION
+                </div>
+
+                <h1>
+                    Browse smart.<br>
+                    Stay <span>safe.</span>
+                </h1>
+
+                <p class="hero-description">
+                    Detect suspicious websites before they put your
+                    information at risk. Analyse URLs using transformer
+                    embeddings and machine learning.
+                </p>
+
+                <div class="hero-features">
+                    <span>✓ URL Intelligence</span>
+                    <span>✓ Hybrid AI Model</span>
+                    <span>✓ Instant Analysis</span>
+                </div>
+
+            </div>
+
+
+            <div class="hero-visual">
+
+                <div class="outer-circle">
+
+                    <div class="shield-card">
+                        <div class="shield-icon">✦</div>
+                        <h3>PHISHGUARD</h3>
+                        <p>THREAT SCANNER</p>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- SCANNER -->
+
+        <section class="scanner-section">
+
+            <div class="section-heading">
+                <span class="section-kicker">URL ANALYSIS</span>
+                <h2>Website Security Scanner</h2>
+                <p>
+                    Enter a website address to check whether it
+                    exhibits phishing characteristics.
+                </p>
+            </div>
+
+
+            <div class="scanner-card">
+
+                <label for="urlInput">Enter website URL</label>
+
+                <div class="input-wrapper">
+
+                    <span class="input-icon">↗</span>
+
+                    <input
+                        type="text"
+                        id="urlInput"
+                        placeholder="https://example.com/login"
+                        autocomplete="off"
+                    >
+
+                    <button id="scanButton" onclick="scanWebsite()">
+                        <span>✦</span> SCAN WEBSITE
+                    </button>
+
+                </div>
+
+                <p class="privacy-note">
+                    🔒 URLs are analysed as text. This application
+                    does not visit the submitted website.
+                </p>
+
+                <div id="loading" class="loading hidden">
+                    <div class="spinner"></div>
+                    <p>Analysing URL with AI model...</p>
+                </div>
+
+                <div id="errorMessage" class="error-message hidden"></div>
+
+            </div>
+
+        </section>
+
+
+        <!-- RESULT -->
+
+        <section id="resultSection" class="result-section hidden">
+
+            <div class="section-heading">
+                <span class="section-kicker">ANALYSIS COMPLETE</span>
+                <h2>Security Analysis Result</h2>
+            </div>
+
+            <div id="resultCard" class="result-card">
+
+                <div id="resultIcon" class="result-icon"></div>
+
+                <h2 id="resultTitle"></h2>
+
+                <p id="resultDescription"></p>
+
+                <div class="probability-container">
+                    <div class="probability-heading">
+                        <span>Estimated phishing probability</span>
+                        <strong id="probabilityValue">0%</strong>
+                    </div>
+
+                    <div class="progress-track">
+                        <div id="probabilityBar" class="progress-bar"></div>
+                    </div>
+                </div>
+
+            </div>
+
+
+            <div class="features-card">
+
+                <h3>URL Intelligence</h3>
+
+                <div class="feature-grid">
+
+                    <div class="feature-box">
+                        <span>URL Length</span>
+                        <strong id="urlLength">-</strong>
+                    </div>
+
+                    <div class="feature-box">
+                        <span>Domain Length</span>
+                        <strong id="domainLength">-</strong>
+                    </div>
+
+                    <div class="feature-box">
+                        <span>Suspicious Words</span>
+                        <strong id="suspiciousWords">-</strong>
+                    </div>
+
+                    <div class="feature-box">
+                        <span>HTTPS</span>
+                        <strong id="httpsStatus">-</strong>
+                    </div>
+
+                    <div class="feature-box">
+                        <span>IP Address</span>
+                        <strong id="ipStatus">-</strong>
+                    </div>
+
+                    <div class="feature-box">
+                        <span>Subdomains</span>
+                        <strong id="subdomains">-</strong>
+                    </div>
+
+                </div>
+
+                <button class="download-button" onclick="downloadCurrentReport()">
+                    ↓ Download Scan Report
+                </button>
+
+                <p class="disclaimer">
+                    Model predictions are estimates and do not guarantee
+                    that a website is safe or malicious.
+                </p>
+
+            </div>
+
+        </section>
+
+
+        <!-- HISTORY -->
+
+        <section id="history" class="content-section">
+
+            <div class="section-heading">
+                <span class="section-kicker">YOUR ACTIVITY</span>
+                <h2>Scan History</h2>
+                <p>Review previous scans during this server session.</p>
+            </div>
+
+            <div class="table-card">
+
+                <div class="table-header">
+                    <h3>Recent Scans</h3>
+
+                    <div>
+                        <button class="secondary-button" onclick="downloadHistory()">
+                            ↓ Export CSV
+                        </button>
+
+                        <button class="secondary-button danger-button" onclick="clearHistory()">
+                            Clear History
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-scroll">
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Website URL</th>
+                                <th>Result</th>
+                                <th>Phishing Probability</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="historyBody">
+                            <tr>
+                                <td colspan="4" class="empty-state">
+                                    No scans available yet.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- PERFORMANCE -->
+
+        <section id="performance" class="content-section">
+
+            <div class="section-heading">
+                <span class="section-kicker">MODEL EVALUATION</span>
+                <h2>Model Performance</h2>
+                <p>
+                    Evaluation results of the Hybrid Random Forest classifier.
+                </p>
+            </div>
+
+            <div class="metrics-grid">
+
+                <div class="metric-card">
+                    <span>Accuracy</span>
+                    <strong>99.74%</strong>
+                </div>
+
+                <div class="metric-card">
+                    <span>Phishing Precision</span>
+                    <strong>99.99%</strong>
+                </div>
+
+                <div class="metric-card">
+                    <span>Phishing Recall</span>
+                    <strong>99.28%</strong>
+                </div>
+
+                <div class="metric-card">
+                    <span>Phishing F1 Score</span>
+                    <strong>99.64%</strong>
+                </div>
+
+                <div class="metric-card">
+                    <span>ROC-AUC</span>
+                    <strong>99.85%</strong>
+                </div>
+
+                <div class="metric-card">
+                    <span>Average Precision</span>
+                    <strong>99.85%</strong>
+                </div>
+
+            </div>
+
+            <p class="disclaimer">
+                Metrics are based on the project's held-out evaluation dataset.
+            </p>
+
+        </section>
+
+
+        <!-- ABOUT -->
+
+        <section id="about" class="content-section">
+
+            <div class="section-heading">
+                <span class="section-kicker">PROJECT OVERVIEW</span>
+                <h2>About PhishGuard</h2>
+                <p>
+                    An AI-powered phishing website detection system
+                    built using machine learning and transformer embeddings.
+                </p>
+            </div>
+
+            <div class="about-card">
+
+                <h3>Technology Stack</h3>
+
+                <div class="tech-grid">
+                    <div>Python</div>
+                    <div>Flask</div>
+                    <div>NumPy</div>
+                    <div>Pandas</div>
+                    <div>Scikit-learn</div>
+                    <div>PyTorch</div>
+                    <div>Sentence Transformers</div>
+                    <div>Random Forest</div>
+                </div>
+
+                <h3>Machine Learning Architecture</h3>
+
+                <div class="architecture">
+
+                    <div class="architecture-box">Website URL</div>
+                    <div class="architecture-arrow">↓</div>
+
+                    <div class="architecture-box">URL Feature Extraction</div>
+                    <div class="architecture-arrow">↓</div>
+
+                    <div class="architecture-split">
+
+                        <div class="architecture-box">
+                            Transformer Embeddings<br>
+                            <small>384 Features</small>
+                        </div>
+
+                        <div class="architecture-box">
+                            Handcrafted Features<br>
+                            <small>26 Features</small>
+                        </div>
+
+                    </div>
+
+                    <div class="architecture-arrow">↓</div>
+
+                    <div class="architecture-box">
+                        410 Hybrid Features
+                    </div>
+
+                    <div class="architecture-arrow">↓</div>
+
+                    <div class="architecture-box highlight-box">
+                        Hybrid Random Forest Model
+                    </div>
+
+                    <div class="architecture-arrow">↓</div>
+
+                    <div class="architecture-box result-architecture">
+                        Phishing / Legitimate
+                    </div>
+
+                </div>
+
+                <p class="dataset-note">
+                    Dataset: PhiUSIIL Phishing URL Dataset
+                </p>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <footer>
+        <div class="footer-brand">✦ PHISH<span>GUARD.</span></div>
+
+        <p>AI-Powered Phishing Website Detection System</p>
+
+        <p>Built with Python • Machine Learning • Flask</p>
+
+        <small>
+            Educational research prototype. A legitimate classification
+            does not guarantee website safety.
+        </small>
+    </footer>
+
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+
+</body>
+</html>

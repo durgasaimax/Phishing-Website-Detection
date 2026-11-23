@@ -1,0 +1,22 @@
+{
+    "Accuracy": 0.9975703119627753,
+    "Phishing Precision": 0.9996996996996997,
+    "Phishing Recall": 0.9939687089454198,
+    "Phishing F1 Score": 0.9968259671816984,
+    "Phishing ROC AUC": 0.9986769654025798,
+    "Phishing Average Precision": 0.998771205137425,
+    "Training Samples": 191743,
+    "Testing Samples": 43627,
+    "Training Domains": 140766,
+    "Testing Domains": 35192,
+    "Confusion Matrix": [
+        [
+            16645,
+            101
+        ],
+        [
+            5,
+            26876
+        ]
+    ]
+}

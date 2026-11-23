@@ -1,457 +1,604 @@
 
-import pandas as pd
-import numpy as np
-import joblib
 import json
-import ipaddress
+import joblib
+import numpy as np
+import pandas as pd
 import tldextract
 
 from pathlib import Path
-from urllib.parse import urlparse
 
-from sklearn.model_selection import GroupShuffleSplit
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
     recall_score,
     f1_score,
     roc_auc_score,
+    average_precision_score,
     classification_report,
     confusion_matrix
 )
+
 
 # ==========================================
 # 1. PROJECT PATHS
 # ==========================================
 
-ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-FEATURE_FILE = ROOT / "data" / "processed" / "url_features.csv"
-
-EMBEDDING_FILE = (
-    ROOT / "data" / "processed" / "embeddings" / "url_embeddings.npy"
+FEATURE_FILE = (
+    PROJECT_ROOT / "data" / "processed" / "url_features.csv"
 )
 
 METADATA_FILE = (
-    ROOT / "data" / "processed" / "embeddings" / "embedding_metadata.csv"
+    PROJECT_ROOT / "data" / "processed" / "embeddings"
+    / "embedding_metadata.csv"
 )
 
-MODEL_FOLDER = ROOT / "models"
-REPORT_FOLDER = ROOT / "reports"
+EMBEDDING_FILE = (
+    PROJECT_ROOT / "data" / "processed" / "embeddings"
+    / "url_embeddings.npy"
+)
 
-MODEL_FOLDER.mkdir(exist_ok=True)
-REPORT_FOLDER.mkdir(exist_ok=True)
+MODEL_DIR = PROJECT_ROOT / "models"
 
-print("=" * 65)
-print("HYBRID PHISHING WEBSITE DETECTION - MODEL TRAINING")
-print("=" * 65)
+MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ==========================================
-# 2. LOAD DATA
+# 2. CONFIGURATION
 # ==========================================
 
-print("\nLoading datasets...")
+RANDOM_STATE = 42
+TEST_SIZE = 0.20
+
+N_ESTIMATORS = 100
+MAX_DEPTH = 20
+MIN_SAMPLES_LEAF = 2
+
+# Labels:
+# 0 = Phishing
+# 1 = Legitimate
+
+
+# ==========================================
+# 3. HELPER FUNCTIONS
+# ==========================================
+
+def find_column(dataframe, expected_name):
+
+    for column in dataframe.columns:
+
+        if str(column).strip().lower() == expected_name.lower():
+            return column
+
+    raise ValueError(
+        f"Column '{expected_name}' not found. "
+        f"Available columns: {list(dataframe.columns)}"
+    )
+
+
+def normalize_url(value):
+
+    if pd.isna(value):
+        return ""
+
+    return str(value).strip()
+
+
+def extract_domain(url):
+
+    try:
+
+        extracted = tldextract.extract(url)
+
+        domain = extracted.top_domain_under_public_suffix
+
+        if domain:
+            return domain.lower()
+
+        hostname = extracted.fqdn
+
+        return hostname.lower() if hostname else url.lower()
+
+    except Exception:
+
+        return url.lower()
+
+
+# ==========================================
+# 4. LOAD DATASETS
+# ==========================================
+
+print("\nLoading PhishGuard training data...\n")
+
+if not FEATURE_FILE.exists():
+    raise FileNotFoundError(FEATURE_FILE)
+
+if not METADATA_FILE.exists():
+    raise FileNotFoundError(METADATA_FILE)
+
+if not EMBEDDING_FILE.exists():
+    raise FileNotFoundError(EMBEDDING_FILE)
+
 
 df = pd.read_csv(FEATURE_FILE)
+
 metadata = pd.read_csv(METADATA_FILE)
 
-embeddings = np.load(EMBEDDING_FILE, mmap_mode="r")
+embeddings = np.load(
+    EMBEDDING_FILE,
+    mmap_mode="r"
+)
 
 print("Feature dataset:", df.shape)
-print("Metadata:", metadata.shape)
-print("Embeddings:", embeddings.shape)
+print("Metadata dataset:", metadata.shape)
+print("Embedding dataset:", embeddings.shape)
 
 
 # ==========================================
-# 3. VERIFY DATA ALIGNMENT
+# 5. VALIDATE DATASET COLUMNS
 # ==========================================
 
-if not (
-    len(df) == len(metadata) == embeddings.shape[0]
-):
-    raise ValueError("Dataset row counts do not match!")
+url_column = find_column(df, "url")
+label_column = find_column(df, "label")
 
-if not df["URL"].reset_index(drop=True).equals(
-    metadata["URL"].reset_index(drop=True)
-):
-    raise ValueError("URL order mismatch between datasets!")
-
-if not df["label"].reset_index(drop=True).equals(
-    metadata["label"].reset_index(drop=True)
-):
-    raise ValueError("Label mismatch between datasets!")
-
-print("Dataset alignment verified!")
+metadata_url_column = find_column(metadata, "url")
+metadata_label_column = find_column(metadata, "label")
 
 
 # ==========================================
-# 4. PREPARE FEATURES
+# 6. VERIFY DATA ALIGNMENT
 # ==========================================
 
-print("\nPreparing features...")
+print("\nChecking dataset alignment...")
 
-# Labels: 0 = phishing, 1 = legitimate
-y = df["label"].astype(int).to_numpy()
+feature_urls = df[url_column].map(normalize_url).to_numpy()
 
-# Handcrafted numerical features
+metadata_urls = (
+    metadata[metadata_url_column]
+    .map(normalize_url)
+    .to_numpy()
+)
+
+feature_labels = (
+    df[label_column]
+    .astype(int)
+    .to_numpy()
+)
+
+metadata_labels = (
+    metadata[metadata_label_column]
+    .astype(int)
+    .to_numpy()
+)
+
+
+if len(df) != len(metadata):
+    raise ValueError("Feature and metadata row counts do not match.")
+
+if len(df) != len(embeddings):
+    raise ValueError("Feature and embedding row counts do not match.")
+
+if not np.array_equal(feature_urls, metadata_urls):
+    raise ValueError("URL ordering mismatch between features and metadata.")
+
+if not np.array_equal(feature_labels, metadata_labels):
+    raise ValueError("Label mismatch between features and metadata.")
+
+if not np.isfinite(embeddings).all():
+    raise ValueError("Embeddings contain NaN or infinite values.")
+
+if not set(np.unique(feature_labels)).issubset({0, 1}):
+    raise ValueError("Unexpected labels. Expected only 0 and 1.")
+
+print("Dataset alignment verified successfully!")
+
+
+# ==========================================
+# 7. PREPARE HANDCRAFTED FEATURES
+# ==========================================
+
+print("\nPreparing handcrafted features...")
+
+excluded_columns = {
+    url_column,
+    label_column
+}
+
 feature_columns = [
-    column for column in df.columns
-    if column not in ["URL", "label"]
+    column
+    for column in df.columns
+    if column not in excluded_columns
 ]
 
-X_handcrafted = df[feature_columns].fillna(0).to_numpy(
+if len(feature_columns) != 26:
+    raise ValueError(
+        f"Expected 26 handcrafted features, "
+        f"but found {len(feature_columns)}."
+    )
+
+X_hand = (
+    df[feature_columns]
+    .apply(pd.to_numeric, errors="coerce")
+    .fillna(0)
+    .to_numpy(dtype=np.float32)
+)
+
+y = feature_labels
+
+X_embeddings = np.asarray(
+    embeddings,
     dtype=np.float32
 )
 
-# Transformer embeddings
-X_embeddings = embeddings
-
-print("Handcrafted features:", X_handcrafted.shape)
-print("Transformer features:", X_embeddings.shape)
-
-
-# ==========================================
-# 5. EXTRACT DOMAIN GROUPS
-# ==========================================
-
-print("\nExtracting domain groups...")
-
-extractor = tldextract.TLDExtract(suffix_list_urls=None)
-
-def get_domain(url):
-
-    try:
-        parsed = urlparse(
-            url if "://" in url else "//" + url
-        )
-
-        hostname = parsed.hostname or ""
-
-        try:
-            ipaddress.ip_address(hostname)
-            return hostname
-        except ValueError:
-            pass
-
-        result = extractor(hostname)
-
-        if result.top_domain_under_public_suffix:
-            return result.top_domain_under_public_suffix
-
-        return hostname
-
-    except Exception:
-        return "unknown"
-
-
-groups = np.array([
-    get_domain(url) for url in df["URL"].astype(str)
-])
-
-# Remove invalid/unknown domains from grouped evaluation
-if np.any(groups == "unknown"):
+if X_embeddings.shape[1] != 384:
     raise ValueError(
-        "Some domains could not be extracted. "
-        "Inspect these URLs before training."
+        f"Expected 384 embedding dimensions, "
+        f"received {X_embeddings.shape[1]}."
     )
 
-print("Unique domain groups:", len(np.unique(groups)))
+print("Handcrafted features:", X_hand.shape)
+print("Transformer embeddings:", X_embeddings.shape)
+
+print("\nLabel distribution:")
+
+print(
+    pd.Series(y)
+    .value_counts()
+    .sort_index()
+    .rename(index={
+        0: "Phishing",
+        1: "Legitimate"
+    })
+)
 
 
 # ==========================================
-# 6. TRAIN TEST SPLIT
+# 8. DOMAIN-BASED TRAIN TEST SPLIT
 # ==========================================
 
-print("\nSplitting data by domain...")
+print("\nPerforming domain-based train/test split...")
+
+groups = np.array([
+    extract_domain(url)
+    for url in feature_urls
+])
+
+if len(np.unique(groups)) < 2:
+    raise ValueError("Not enough unique domains for grouped splitting.")
 
 splitter = GroupShuffleSplit(
     n_splits=1,
-    test_size=0.20,
-    random_state=42
+    test_size=TEST_SIZE,
+    random_state=RANDOM_STATE
 )
 
 train_idx, test_idx = next(
-    splitter.split(X_handcrafted, y, groups)
+    splitter.split(
+        X_hand,
+        y,
+        groups=groups
+    )
 )
 
-# Check both classes exist in each partition
-if len(np.unique(y[train_idx])) != 2:
-    raise ValueError("Training set does not contain both classes!")
+train_domains = set(groups[train_idx])
+test_domains = set(groups[test_idx])
 
-if len(np.unique(y[test_idx])) != 2:
-    raise ValueError("Test set does not contain both classes!")
+overlapping_domains = train_domains.intersection(test_domains)
+
+if overlapping_domains:
+    raise ValueError("Domain leakage detected between train and test.")
 
 print("Training records:", len(train_idx))
 print("Testing records:", len(test_idx))
 
-print(
-    "Overlapping domains:",
-    len(set(groups[train_idx]) & set(groups[test_idx]))
-)
+print("Training domains:", len(train_domains))
+print("Testing domains:", len(test_domains))
+
+print("Domain overlap:", len(overlapping_domains))
 
 
 # ==========================================
-# 7. MODEL EVALUATION FUNCTION
+# 9. SCALE HANDCRAFTED FEATURES
 # ==========================================
 
-results = []
-
-def evaluate_model(name, model, X_train, X_test):
-
-    print("\nTraining:", name)
-
-    model.fit(X_train, y[train_idx])
-
-    predictions = model.predict(X_test)
-
-    probabilities = model.predict_proba(X_test)[:, 1]
-
-    metrics = {
-        "Model": name,
-        "Accuracy": accuracy_score(y[test_idx], predictions),
-        "Precision": precision_score(
-            y[test_idx], predictions, zero_division=0
-        ),
-        "Recall": recall_score(
-            y[test_idx], predictions, zero_division=0
-        ),
-        "F1 Score": f1_score(
-            y[test_idx], predictions, zero_division=0
-        ),
-        "ROC AUC": roc_auc_score(
-            y[test_idx], probabilities
-        )
-    }
-
-    results.append(metrics)
-
-    print("\nPerformance:")
-    for key, value in metrics.items():
-        print(f"{key}: {value}")
-
-    print("\nClassification report:")
-    print(classification_report(
-        y[test_idx],
-        predictions,
-        target_names=["Phishing", "Legitimate"],
-        zero_division=0
-    ))
-
-    print("\nConfusion matrix:")
-    print(confusion_matrix(y[test_idx], predictions))
-
-    return model
-
-
-# ==========================================
-# 8. MODEL 1 - TF-IDF BASELINE
-# ==========================================
-
-print("\n" + "=" * 65)
-print("MODEL 1: TF-IDF + LOGISTIC REGRESSION")
-print("=" * 65)
-
-vectorizer = TfidfVectorizer(
-    analyzer="char",
-    ngram_range=(3, 5),
-    max_features=30000,
-    min_df=2,
-    sublinear_tf=True
-)
-
-X_train_tfidf = vectorizer.fit_transform(
-    df["URL"].iloc[train_idx]
-)
-
-X_test_tfidf = vectorizer.transform(
-    df["URL"].iloc[test_idx]
-)
-
-tfidf_model = LogisticRegression(
-    max_iter=1000,
-    class_weight="balanced"
-)
-
-tfidf_model = evaluate_model(
-    "TF-IDF + Logistic Regression",
-    tfidf_model,
-    X_train_tfidf,
-    X_test_tfidf
-)
-
-joblib.dump(
-    vectorizer,
-    MODEL_FOLDER / "tfidf_vectorizer.pkl"
-)
-
-joblib.dump(
-    tfidf_model,
-    MODEL_FOLDER / "tfidf_model.pkl"
-)
-
-
-# ==========================================
-# 9. MODEL 2 - TRANSFORMER EMBEDDINGS
-# ==========================================
-
-print("\n" + "=" * 65)
-print("MODEL 2: TRANSFORMER + LOGISTIC REGRESSION")
-print("=" * 65)
-
-X_train_emb = np.asarray(
-    embeddings[train_idx], dtype=np.float32
-)
-
-X_test_emb = np.asarray(
-    embeddings[test_idx], dtype=np.float32
-)
-
-transformer_model = LogisticRegression(
-    max_iter=1000,
-    class_weight="balanced"
-)
-
-transformer_model = evaluate_model(
-    "Transformer + Logistic Regression",
-    transformer_model,
-    X_train_emb,
-    X_test_emb
-)
-
-joblib.dump(
-    transformer_model,
-    MODEL_FOLDER / "transformer_model.pkl"
-)
-
-
-# ==========================================
-# 10. MODEL 3 - HYBRID MODEL
-# ==========================================
-
-print("\n" + "=" * 65)
-print("MODEL 3: HYBRID FEATURES + LOGISTIC REGRESSION")
-print("=" * 65)
+print("\nScaling handcrafted features...")
 
 scaler = StandardScaler()
 
 X_train_hand = scaler.fit_transform(
-    X_handcrafted[train_idx]
+    X_hand[train_idx]
 ).astype(np.float32)
 
 X_test_hand = scaler.transform(
-    X_handcrafted[test_idx]
+    X_hand[test_idx]
 ).astype(np.float32)
 
-X_train_hybrid = np.concatenate(
-    [X_train_emb, X_train_hand],
+
+# ==========================================
+# 10. CREATE HYBRID FEATURES
+# ==========================================
+
+print("\nCombining embeddings and handcrafted features...")
+
+X_train = np.concatenate(
+    [
+        X_embeddings[train_idx],
+        X_train_hand
+    ],
     axis=1
 )
 
-X_test_hybrid = np.concatenate(
-    [X_test_emb, X_test_hand],
+X_test = np.concatenate(
+    [
+        X_embeddings[test_idx],
+        X_test_hand
+    ],
     axis=1
 )
 
-hybrid_model = LogisticRegression(
-    max_iter=1000,
-    class_weight="balanced"
+print("Training hybrid shape:", X_train.shape)
+print("Testing hybrid shape:", X_test.shape)
+
+if X_train.shape[1] != 410:
+    raise ValueError("Training features must contain 410 columns.")
+
+if X_test.shape[1] != 410:
+    raise ValueError("Testing features must contain 410 columns.")
+
+
+# ==========================================
+# 11. TRAIN RANDOM FOREST
+# ==========================================
+
+print("\nTraining Hybrid Random Forest...")
+
+model = RandomForestClassifier(
+    n_estimators=N_ESTIMATORS,
+    max_depth=MAX_DEPTH,
+    min_samples_leaf=MIN_SAMPLES_LEAF,
+    class_weight="balanced",
+    random_state=RANDOM_STATE,
+    n_jobs=-1
 )
 
-hybrid_model = evaluate_model(
-    "Hybrid + Logistic Regression",
-    hybrid_model,
-    X_train_hybrid,
-    X_test_hybrid
+model.fit(
+    X_train,
+    y[train_idx]
 )
+
+print("Model training completed!")
+
+
+# ==========================================
+# 12. MODEL PREDICTIONS
+# ==========================================
+
+print("\nEvaluating model...")
+
+predictions = model.predict(X_test)
+
+probabilities = model.predict_proba(X_test)
+
+phishing_index = list(model.classes_).index(0)
+
+phishing_probabilities = probabilities[:, phishing_index]
+
+# Convert labels so phishing is the positive class.
+y_test_phishing = (
+    y[test_idx] == 0
+).astype(int)
+
+predictions_phishing = (
+    predictions == 0
+).astype(int)
+
+
+# ==========================================
+# 13. EVALUATION METRICS
+# ==========================================
+
+accuracy = accuracy_score(
+    y[test_idx],
+    predictions
+)
+
+phishing_precision = precision_score(
+    y[test_idx],
+    predictions,
+    pos_label=0,
+    zero_division=0
+)
+
+phishing_recall = recall_score(
+    y[test_idx],
+    predictions,
+    pos_label=0,
+    zero_division=0
+)
+
+phishing_f1 = f1_score(
+    y[test_idx],
+    predictions,
+    pos_label=0,
+    zero_division=0
+)
+
+phishing_roc_auc = roc_auc_score(
+    y_test_phishing,
+    phishing_probabilities
+)
+
+phishing_average_precision = average_precision_score(
+    y_test_phishing,
+    phishing_probabilities
+)
+
+
+# ==========================================
+# 14. CLASSIFICATION REPORT
+# ==========================================
+
+print("\n========== CLASSIFICATION REPORT ==========\n")
+
+report = classification_report(
+    y[test_idx],
+    predictions,
+    labels=[0, 1],
+    target_names=["Phishing", "Legitimate"],
+    zero_division=0
+)
+
+print(report)
+
+
+# ==========================================
+# 15. CONFUSION MATRIX
+# ==========================================
+
+matrix = confusion_matrix(
+    y[test_idx],
+    predictions,
+    labels=[0, 1]
+)
+
+print("\n========== CONFUSION MATRIX ==========\n")
+
+print("Rows = Actual | Columns = Predicted")
+print(matrix)
+
+tn_phishing, fp_phishing, fn_phishing, tp_phishing = (
+    matrix[0, 0],
+    matrix[0, 1],
+    matrix[1, 0],
+    matrix[1, 1]
+)
+
+
+# ==========================================
+# 16. PRINT FINAL METRICS
+# ==========================================
+
+metrics = {
+
+    "Accuracy": float(accuracy),
+
+    "Phishing Precision": float(phishing_precision),
+
+    "Phishing Recall": float(phishing_recall),
+
+    "Phishing F1 Score": float(phishing_f1),
+
+    "Phishing ROC AUC": float(phishing_roc_auc),
+
+    "Phishing Average Precision": float(
+        phishing_average_precision
+    ),
+
+    "Training Samples": int(len(train_idx)),
+
+    "Testing Samples": int(len(test_idx)),
+
+    "Training Domains": int(len(train_domains)),
+
+    "Testing Domains": int(len(test_domains)),
+
+    "Confusion Matrix": matrix.tolist()
+}
+
+
+print("\n========== FINAL EVALUATION METRICS ==========\n")
+
+print(
+    json.dumps(
+        metrics,
+        indent=4
+    )
+)
+
+
+# ==========================================
+# 17. FEATURE IMPORTANCE
+# ==========================================
+
+print("\n========== TOP 20 IMPORTANT FEATURES ==========\n")
+
+all_feature_names = (
+    [f"embedding_{i}" for i in range(384)]
+    + list(feature_columns)
+)
+
+importances = model.feature_importances_
+
+top_indices = np.argsort(importances)[::-1][:20]
+
+for index in top_indices:
+
+    print(
+        all_feature_names[index],
+        round(float(importances[index]), 6)
+    )
+
+embedding_importance = float(
+    importances[:384].sum()
+)
+
+handcrafted_importance = float(
+    importances[384:].sum()
+)
+
+print("\nEmbedding importance:", round(embedding_importance, 4))
+
+print(
+    "Handcrafted importance:",
+    round(handcrafted_importance, 4)
+)
+
+
+# ==========================================
+# 18. SAVE TRAINED MODELS
+# ==========================================
+
+print("\nSaving trained models...")
 
 joblib.dump(
-    hybrid_model,
-    MODEL_FOLDER / "hybrid_model.pkl"
+    model,
+    MODEL_DIR / "hybrid_random_forest.pkl"
 )
 
 joblib.dump(
     scaler,
-    MODEL_FOLDER / "feature_scaler.pkl"
+    MODEL_DIR / "feature_scaler.pkl"
 )
 
-
-# ==========================================
-# 11. MODEL 4 - HYBRID RANDOM FOREST
-# ==========================================
-
-print("\n" + "=" * 65)
-print("MODEL 4: HYBRID + RANDOM FOREST")
-print("=" * 65)
-
-rf_model = RandomForestClassifier(
-    n_estimators=100,
-    max_depth=20,
-    min_samples_leaf=2,
-    class_weight="balanced",
-    random_state=42,
-    n_jobs=-1
-)
-
-rf_model = evaluate_model(
-    "Hybrid + Random Forest",
-    rf_model,
-    X_train_hybrid,
-    X_test_hybrid
-)
-
+# Save feature ordering for reproducibility.
 joblib.dump(
-    rf_model,
-    MODEL_FOLDER / "hybrid_random_forest.pkl"
-)
-
-
-# ==========================================
-# 12. SAVE RESULTS
-# ==========================================
-
-results_df = pd.DataFrame(results)
-
-results_df = results_df.sort_values(
-    by="F1 Score",
-    ascending=False
-)
-
-results_df.to_csv(
-    REPORT_FOLDER / "model_comparison.csv",
-    index=False
+    feature_columns,
+    MODEL_DIR / "feature_columns.pkl"
 )
 
 with open(
-    REPORT_FOLDER / "training_split.json",
-    "w"
+    MODEL_DIR / "evaluation_metrics.json",
+    "w",
+    encoding="utf-8"
 ) as file:
 
     json.dump(
-        {
-            "random_state": 42,
-            "test_size": 0.20,
-            "split_method": "GroupShuffleSplit by registrable domain",
-            "train_records": int(len(train_idx)),
-            "test_records": int(len(test_idx)),
-            "unique_domains": int(len(np.unique(groups)))
-        },
+        metrics,
         file,
         indent=4
     )
 
-print("\n" + "=" * 65)
-print("MODEL COMPARISON")
-print("=" * 65)
+print("\nModels and evaluation metrics saved successfully!")
 
-print(results_df.to_string(index=False))
+print("\nFiles saved:")
 
-print("\nTraining completed successfully!")
+print(MODEL_DIR / "hybrid_random_forest.pkl")
+print(MODEL_DIR / "feature_scaler.pkl")
+print(MODEL_DIR / "feature_columns.pkl")
+print(MODEL_DIR / "evaluation_metrics.json")
 
-print("\nModels saved in:", MODEL_FOLDER)
-
-print("Results saved in:", REPORT_FOLDER)
+print("\nPHISHGUARD TRAINING COMPLETED SUCCESSFULLY!")
