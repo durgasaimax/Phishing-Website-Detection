@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.streamlit/secrets.toml
+
+# Training datasets
+data/raw/
+
+# Generated embeddings
+data/processed/embeddings/

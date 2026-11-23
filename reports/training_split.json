@@ -1,0 +1,8 @@
+{
+    "random_state": 42,
+    "test_size": 0.2,
+    "split_method": "GroupShuffleSplit by registrable domain",
+    "train_records": 193481,
+    "test_records": 41889,
+    "unique_domains": 175509
+}
