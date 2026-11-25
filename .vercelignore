@@ -9,6 +9,7 @@ reports/
 
 app_streamlit_backup.py
 inference.py
+verify_v2_extraction.py
 
 models/hybrid_random_forest.pkl
 models/feature_scaler.pkl
@@ -17,3 +18,7 @@ models/hybrid_model.pkl
 models/tfidf_model.pkl
 models/tfidf_vectorizer.pkl
 models/transformer_model.pkl
+models/url_only_v2_features.pkl
+models/url_only_v2_model.pkl
+models/url_only_v3_features.pkl
+models/url_only_v3_model.pkl

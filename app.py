@@ -31,7 +31,8 @@ def scan():
     try:
         analysis = predict_website(url)
 
-        result = analysis["prediction"]
+        result = analysis["result"]
+        prediction = analysis["prediction"]
         phishing_probability = analysis["probability"]
 
         scan_record = {
@@ -47,7 +48,7 @@ def scan():
             "success": True,
             "url": url,
             "result": result,
-            "prediction": result,
+            "prediction": prediction,
             "phishing_probability": phishing_probability,
             "features": analysis["features"]
         })
